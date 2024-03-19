@@ -1,0 +1,5 @@
+Train (including val):
+python train_main.py --exp_num 61242 --mode train --writer True --config ./experiments/exp_61242/train_diffusion.yaml
+
+Test:
+python evaluate.py --epoch_num 450 --exp_num 64 --mode test

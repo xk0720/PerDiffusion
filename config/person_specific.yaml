@@ -1,0 +1,75 @@
+model:
+    type: # PersonSpecificEncoder
+        Transformer
+    args:
+        in_features: 58
+        embed_dim: 512
+        num_heads: 4
+        num_layers: 4
+        mlp_dim: 1024
+        seq_len: 750
+        proj_dim: 512
+        proj_head: mlp
+        drop_prob: 0.1
+        max_len: 5000
+        pos_encoding: absolute
+        embed_layer: linear
+
+loss:
+    type: SupConLoss
+    args:
+        temperature: 0.07
+        base_temperature: 0.07
+
+optimizer:
+    type:
+        adamW
+    args:
+        lr: 0.0001
+        weight_decay: 1e-4
+        beta: [0.9, 0.999]
+    scheduler: 'cosine_annealing'
+
+trainer:
+    seed: 1234
+    start_epoch: 0
+    epochs: 200
+    resume:
+    data_aug: False # whether do data augmentation
+    clip_grad_norm: False
+    log_dir: ./log/person_specific
+    tb_dir: ./tb_logs/person_specific
+    out_dir: ./results/person_specific
+    checkpoint_dir: ./checkpoints/person_specific
+    save_period: 10
+    val_period: 10
+
+dataset:
+    dataset_path: /home/x/xk18/PhD_code_exp/phd_data_all/react_clean
+    split: train
+    img_size: 256
+    crop_size: 224
+    clip_length: 750
+    batch_size: 3
+    shuffle: True
+    method: 'speaker_based' # 'non_speaker_based'
+    num_person: 16
+    num_sample: 4
+    num_workers: 16
+    load_emotion_l: True
+    load_3dmm_l: True
+
+validation_dataset:
+    dataset_path: /home/x/xk18/PhD_code_exp/phd_data_all/react_clean
+    split: val
+    img_size: 256
+    crop_size: 224
+    clip_length: 750
+    batch_size: 6
+    shuffle: False
+    method: 'speaker_based' # 'non_speaker_based'
+    num_person: 16
+    num_sample: 4
+    num_workers: 16
+    load_emotion_l: True
+    load_3dmm_l: True

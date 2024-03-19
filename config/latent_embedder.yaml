@@ -1,0 +1,74 @@
+model:
+    type:
+        AutoencoderRNN_VAE_v2
+    args:
+        emotion_dim: 25
+        coeff_3dmm_dim: 58
+        emb_dims: [128, 128]
+        num_layers: 2
+        hidden_dim: 512
+        z_dim: 512
+        rnn_type: 'gru'
+        dropout: 0.0
+        window_size: 50
+        seq_len: 750
+
+trainer:
+    seed: 1234
+    start_epoch: 0
+    epochs: 1500
+    resume:
+    num_workers: 12
+    clip_grad: True
+    log_dir: ./log/latent_embedder
+    tb_dir: ./tb_logs/latent_embedder
+    out_dir: ./results/latent_embedder
+    checkpoint_dir: ./checkpoints/latent_embedder
+    save_period: 50
+    val_period: 50
+
+loss:
+    type:
+        MSELoss_AE_v2
+    args:
+        w_mse: 1
+        w_kld: 0.00001
+        w_coeff: 1
+
+optimizer:
+    type:
+        adamW
+    args:
+        lr: 0.001
+        weight_decay: 5e-4
+        beta: [0.9, 0.999]
+
+dataset:
+    dataset_path: /home/x/xk18/PhD_code_exp/phd_data_all/react_clean
+    split: train
+    img_size: 256
+    crop_size: 224
+    clip_length: 750
+    fps: 25
+    batch_size: 32
+    shuffle: True
+    num_workers: 16
+    load_video: False
+    load_audio: False
+    load_emotion: True
+    load_3dmm: True
+
+validation_dataset:
+    dataset_path: /home/x/xk18/PhD_code_exp/phd_data_all/react_clean
+    split: val
+    img_size: 256
+    crop_size: 224
+    clip_length: 750
+    fps: 25
+    batch_size: 32
+    shuffle: False
+    num_workers: 16
+    load_video: False
+    load_audio: False
+    load_emotion: True
+    load_3dmm: True
