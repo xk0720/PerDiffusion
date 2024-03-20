@@ -167,7 +167,7 @@ class TransformerDenoiser(nn.Module):
         else:
             raise ValueError(f"Not supported architechure{self.arch}!")
 
-    def mask_cond(self, feature, mode='test'):  # train or test
+    def mask_cond(self, feature, mode='test', drop_prob=0.0):  # train or test
         bs, _, _ = feature.shape
 
         # classifier-free guidance
@@ -178,10 +178,10 @@ class TransformerDenoiser(nn.Module):
             feature = torch.cat((uncond_feat, con_feat), dim=0)
 
         else:  # train or val mode
-            if self.guidance_uncodp > 0.0:
+            if drop_prob > 0.0:
                 mask = torch.bernoulli(
                     torch.ones(bs, device=feature.device) *
-                    self.guidance_uncodp).view(
+                    drop_prob).view(
                     bs, 1, 1)  # 1-> use null_cond, 0-> use real cond
                 feature = feature * (1.0 - mask)
 
@@ -201,7 +201,7 @@ class TransformerDenoiser(nn.Module):
         else:
             # [1, bs, encoded_dim] => [1, bs, latent_dim]
             listener_latent_embed = self.listener_latent_proj(listener_latent_embed)
-            listener_latent_embed = self.mask_cond(listener_latent_embed, mode)  # condition drop
+            listener_latent_embed = self.mask_cond(listener_latent_embed, mode, self.l_latent_embed_drop_prob)
         listener_latent_embed = listener_latent_embed.permute(1, 0, 2).contiguous()
 
         listener_personal_embed = model_kwargs.get('listener_personal_embed')
@@ -211,7 +211,7 @@ class TransformerDenoiser(nn.Module):
         # TODO: we use listener_personal_embed to rewrite the weight.
         else:
             listener_personal_embed = self.listener_personal_proj(listener_personal_embed)
-            listener_personal_embed = self.mask_cond(listener_personal_embed, mode)
+            listener_personal_embed = self.mask_cond(listener_personal_embed, mode, self.l_personal_embed_drop_prob)
         listener_personal_embed = listener_personal_embed.permute(1, 0, 2).contiguous()
 
         speaker_audio_encodings = model_kwargs.get('speaker_audio_encodings')
@@ -220,7 +220,7 @@ class TransformerDenoiser(nn.Module):
             speaker_audio_encodings = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
         else:
             speaker_audio_encodings = self.speaker_audio_proj(speaker_audio_encodings)
-            speaker_audio_encodings = self.mask_cond(speaker_audio_encodings, mode)
+            speaker_audio_encodings = self.mask_cond(speaker_audio_encodings, mode, self.s_audio_enc_drop_prob)
         speaker_audio_encodings = speaker_audio_encodings.permute(1, 0, 2).contiguous()
 
         speaker_latent_embed = model_kwargs.get('speaker_latent_embed')
@@ -228,7 +228,7 @@ class TransformerDenoiser(nn.Module):
             speaker_latent_embed = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
         else:
             speaker_latent_embed = self.speaker_latent_proj(speaker_latent_embed)
-            speaker_latent_embed = self.mask_cond(speaker_latent_embed, mode)
+            speaker_latent_embed = self.mask_cond(speaker_latent_embed, mode, self.s_latent_embed_drop_prob)
         speaker_latent_embed = speaker_latent_embed.permute(1, 0, 2).contiguous()
 
         speaker_3dmm_encodings = model_kwargs.get("speaker_3dmm_encodings")
@@ -236,7 +236,7 @@ class TransformerDenoiser(nn.Module):
             speaker_3dmm_encodings = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
         else:
             speaker_3dmm_encodings = self.speaker_3dmm_proj(speaker_3dmm_encodings)
-            speaker_3dmm_encodings = self.mask_cond(speaker_3dmm_encodings)
+            speaker_3dmm_encodings = self.mask_cond(speaker_3dmm_encodings, mode, self.s_3dmm_enc_drop_prob)
         speaker_3dmm_encodings = speaker_3dmm_encodings.permute(1, 0, 2).contiguous()
 
         past_listener_emotion = model_kwargs.get('past_listener_emotion')
@@ -245,7 +245,7 @@ class TransformerDenoiser(nn.Module):
         # TODO: original past_listener_emotion or use its embedding output from auto-encoder.
         else:
             past_listener_emotion = self.listener_emotion_proj(past_listener_emotion)
-            past_listener_emotion = self.mask_cond(past_listener_emotion, mode)
+            past_listener_emotion = self.mask_cond(past_listener_emotion, mode, self.past_l_emotion_drop_prob)
         past_listener_emotion = past_listener_emotion.permute(1, 0, 2).contiguous()
 
         return (listener_latent_embed,
@@ -401,6 +401,15 @@ class TransformerDenoiser(nn.Module):
                 model_kwargs,
             )
         )
+
+        # TODO: debug: print all shapes
+        # print("listener_latent_embed", listener_latent_embed.shape)
+        # print("listener_personal_embed", listener_personal_embed.shape)
+        # print("speaker_audio_encodings", speaker_audio_encodings.shape)
+        # print("speaker_latent_embed", speaker_latent_embed.shape)
+        # print("speaker_3dmm_encodings", speaker_3dmm_encodings.shape)
+        # print("past_listener_emotion", past_listener_emotion.shape)
+        # 5/0
 
         output = self._forward(
             sample,

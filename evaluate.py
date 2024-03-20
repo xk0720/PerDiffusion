@@ -19,7 +19,8 @@ def parse_arg():
     parser.add_argument("--mode", type=str, help="train (val) or test", required=True)
     parser.add_argument("--config", type=str, help="config path", required=True)
     parser.add_argument("--evaluate_log_dir", type=str, default="./log/evaluate")  # evaluate
-    # parser.add_argument("--split", type=str, default="test", help="test | val")
+    parser.add_argument("--binarize", type=bool, help="whether binarize AU in predicted emotions",
+                        default=False)
     args = parser.parse_args()
     return args
 
@@ -186,7 +187,7 @@ def main(args):
     model = getattr(module_arch, cfg.trainer.model)(cfg, device)
     model.to(device)
 
-    FRC, FRD, FRDvs, FRVar, smse, TLCC = evaluate(cfg, device, model, test_loader, split)
+    FRC, FRD, FRDvs, FRVar, smse, TLCC = evaluate(cfg, device, model, test_loader, split, cfg.binarize)
 
     print("FRC: {:.5f}  FRD: {:.5f}  FRDvs: {:.5f}  FRVar: {:.5f}  smse: {:.5f}  TLCC: {:.5f}"
           .format(FRC, FRD, FRDvs, FRVar, smse, TLCC))
