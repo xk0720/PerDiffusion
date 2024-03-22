@@ -5,16 +5,14 @@ https://github.com/BarqueroGerman/BeLFusion
 import torch
 import torch.nn as nn
 import os
-import numpy as np
-from einops import rearrange
+import model as module_arch
 from model.diffusion.mlp_diffae import MLPSkipNet, Activation
 from model.diffusion.diffusion_prior.transformer_prior import DiffusionPriorNetwork
 from model.diffusion.diffusion_decoder.transformer_denoiser import TransformerDenoiser
 from model.diffusion.gaussian_diffusion import PriorLatentDiffusion, DecoderLatentDiffusion
 from model.diffusion.resample import UniformSampler
-import model as module_arch
 from utils.util import load_config_from_file, checkpoint_load, checkpoint_resume
-from model.diffusion.utils.util import prob_mask_like
+from einops import rearrange
 
 
 class BaseLatentModel(nn.Module):
@@ -50,12 +48,24 @@ class BaseLatentModel(nn.Module):
         state_dict = checkpoint['state_dict']
         self.person_encoder.load_state_dict(state_dict)
 
+        # ====== TODO: (optional) RNN_VAE embedder for 3dmm feature encodings
+        self.latent_3dmm_embedder = getattr(module_arch, cfg.latent_3dmm_embedder.type)(cfg.latent_3dmm_embedder.args)
+        model_path = cfg.latent_3dmm_embedder.checkpoint_path
+        assert os.path.exists(model_path), (
+            "Miss checkpoint for latent embedder: {}.".format(model_path))
+        checkpoint = torch.load(model_path, map_location='cpu')
+        state_dict = checkpoint['state_dict']
+        self.latent_3dmm_embedder.load_state_dict(state_dict)
+        # ======
+
         # assert "statistics" in checkpoint or emb_preprocessing.lower() == "none", \
         #     "Model statistics are not available in its checkpoint. Can't apply embeddings preprocessing."
         # self.embed_emotion_stats = checkpoint["statistics"] if "statistics" in checkpoint else None
 
         if self.freeze_encoder:  # freeze models
             for para in self.latent_embedder.parameters():
+                para.requires_grad = False
+            for para in self.latent_3dmm_embedder.parameters():
                 para.requires_grad = False
             for para in self.person_encoder.parameters():
                 para.requires_grad = False
@@ -102,15 +112,6 @@ class BaseLatentModel(nn.Module):
         else:
             raise NotImplementedError(f"Error on the embedding preprocessing value: '{self.emb_preprocessing}'")
 
-    # def encode_emotion(self, seq_em):
-    #     return self.preprocess(self.embed_emotion.encode(seq_em))
-    # def decode_emotion(self, em_emb):
-    #     return self.embed_emotion.decode(self.undo_preprocess(em_emb))
-    # def decode_3dmm(self, reaction):
-    #     return self.embed_emotion.decode_coeff(reaction)
-    # def get_emb_size(self):
-    #     return self.emb_size
-
     def forward(self, pred, timesteps, seq_em):
         raise NotImplementedError("This is an abstract class.")
 
@@ -123,11 +124,6 @@ class BaseLatentModel(nn.Module):
 
     def to(self, device):
         self.model = self.model.to(device)
-        # self.embed_emotion = self.embed_emotion.to(device)
-        # if self.embed_emotion_stats is not None:
-        #     for key in self.embed_emotion_stats:
-        #         self.embed_emotion_stats[key] = self.embed_emotion_stats[key].to(device)
-        # super().to(device)
         return self
 
     def cuda(self):
@@ -372,8 +368,13 @@ class DecoderLatentMatcher(BaseLatentModel):
         self.window_size = cfg.window_size
         self.token_len = cfg.token_len
         self.emotion_dim = cfg.get("nfeats", 25)  # emotion feat dimension
+        # (optional) whether encode raw emotion or 3dmm features to the encodings.
+        self.encode_emotion = cfg.get("encode_emotion", False)
+        self.encode_3dmm = cfg.get("encode_3dmm", False)
 
         self.init_params = {
+            "encode_emotion": self.encode_emotion,
+            "encode_3dmm": self.encode_3dmm,
             "ablation_skip_connection": cfg.get("ablation_skip_connection", True),
             "nfeats": cfg.get("nfeats", 25),
             "latent_dim": cfg.get("latent_dim", 512),
@@ -393,7 +394,7 @@ class DecoderLatentMatcher(BaseLatentModel):
             "l_embed_dim": cfg.get("l_embed_dim", 512),  # defined in diffusion prior
             "s_embed_dim": cfg.get("s_embed_dim", 512),  # defined in diffusion prior
             "personal_emb_dim": cfg.get("personal_emb_dim", 512),
-            "l_3dmm_dim": cfg.get("l_3dmm_dim", 58),
+            "s_3dmm_dim": cfg.get("s_3dmm_dim", 58),
             "concat": cfg.get("concat", "concat_first"),  # "concat_last"
             "guidance_scale": cfg.get("guidance_scale", 7.5),
             "l_latent_embed_drop_prob": cfg.get("l_latent_embed_drop_prob", 0.2),
@@ -480,26 +481,22 @@ class DecoderLatentMatcher(BaseLatentModel):
                 s_audio_encodings = self.audio_encoder._encode(s_audio_selected)
                 s_audio_encodings = s_audio_encodings.repeat_interleave(self.k, dim=0)
 
-                # TODO: optional condition, speaker 3dmm encodings
-                # 1. use encoded speaker 3dmm features
-                # s_3dmm_encodings = self.latent_3dmm_embedder.get_encodings(s_3dmm_selected)
-                # s_3dmm_encodings = s_3dmm_encodings.repeat_interleave(self.k, dim=0)
-                # 2. use speaker 3dmm raw features
-                s_3dmm_encodings = s_3dmm_selected.repeat_interleave(self.k, dim=0)
-                # shape: (batch_size * k, window_size, ...)
-
-                # TODO: optional condition, speaker emotion encodings
-                # 1. use encoded speaker emotion features
-                # s_emotion_encodings = self.latent_embedder.get_encodings(s_emotion_selected)
-                # s_emotion_encodings = s_emotion_encodings.repeat_interleave(self.k, dim=0)
-                # 2. use speaker emotion raw features
-                s_emotion_encodings = s_emotion_selected.repeat_interleave(self.k, dim=0)
-                # shape: (batch_size * k, window_size, ...)
-
                 # freeze latent RNN_VAE embedder to extract speaker latent embedding
                 s_latent_embed = self.latent_embedder.encode(s_emotion_selected).unsqueeze(1)
                 # we repeat the obs 'k' times for k appropriate reactions
                 s_latent_embed = s_latent_embed.repeat_interleave(self.k, dim=0)  # shape: (batch_size * k, 1, dim)
+
+                # TODO: optional condition, speaker 3dmm encodings
+                if self.encode_3dmm:  # whether encode speaker 3dmm features (encodings)
+                    s_3dmm_selected = self.latent_3dmm_embedder.get_encodings(s_3dmm_selected)
+                s_3dmm_encodings = s_3dmm_selected.repeat_interleave(self.k, dim=0)
+                # shape: (batch_size * k, window_size, ...)
+
+                # TODO: optional condition, speaker emotion encodings
+                if self.encode_emotion:  # whether encode speaker emotion features (encodings)
+                    s_emotion_selected = self.latent_embedder.get_encodings(s_emotion_selected)
+                s_emotion_encodings = s_emotion_selected.repeat_interleave(self.k, dim=0)
+                # shape: (batch_size * k, window_size, ...)
 
                 model_kwargs = {"listener_latent_embed": l_latent_embed,
                                 "listener_personal_embed": personal_embed,
@@ -524,8 +521,11 @@ class DecoderLatentMatcher(BaseLatentModel):
             batch_size = diff_batch // (seq_len * self.k)
 
             with torch.no_grad():
-                # TODO: speaker emotion encodings (and/or speaker 3dmm encodings)
-                # speaker_emotion_input = self.latent_embedder.get_encodings(speaker_emotion_input)
+                # TODO: (optional) speaker emotion encodings (and/or speaker 3dmm encodings)
+                if self.encode_3dmm:
+                    speaker_3dmm_input = self.latent_3dmm_embedder.get_encodings(speaker_3dmm_input)
+                if self.encode_emotion:
+                    speaker_emotion_input = self.latent_embedder.get_encodings(speaker_emotion_input)
 
                 # freeze personal-specific encoder to extract the personal embedding.
                 personal_embed, _ = self.person_encoder.forward(listener_personal_input)  # (batch_size * k, ...)
@@ -684,13 +684,14 @@ class LatentMatcher(nn.Module):
             speaker_latent_embed = model_kwargs["speaker_latent_emb"]  # (batch_size * n * k, 1, encoded_dim==512)
             speaker_audio_encodings = model_kwargs["speaker_audio_encodings"]  # (batch_size * n * k, window_size, 78)
             speaker_3dmm_encodings = model_kwargs["speaker_3dmm_encodings"]  # (batch_size * n * k, window_size, 58)
-            speaker_emotion_encodings = model_kwargs["speaker_emotion_encodings"] # (batch_size * n * k, window_size, 25)
+            speaker_emotion_encodings = model_kwargs[
+                "speaker_emotion_encodings"]  # (batch_size * n * k, window_size, 25)
 
             # diffusion decoder
             output_decoder = self.diffusion_decoder.forward(
                 # listener_3dmm_input=listener_3dmm_input,  # shape: (batch_size * k, seq_len, 3dmm_dim=58)
-                speaker_emotion_input=speaker_emotion_encodings, # shape: (batch_size * n * k, window_size, emo_dim=25)
-                speaker_3dmm_input=speaker_3dmm_encodings,   # shape: (batch_size * n * k, window_size, 3dmm_dim=58)
+                speaker_emotion_input=speaker_emotion_encodings,  # shape: (batch_size * n * k, window_size, emo_dim=25)
+                speaker_3dmm_input=speaker_3dmm_encodings,  # shape: (batch_size * n * k, window_size, 3dmm_dim=58)
                 listener_personal_input=listener_personal_input,  # shape: (batch_size * k, seq_len, 3dmm_dim=58)
                 speaker_audio_encodings=speaker_audio_encodings,  # shape: (batch_size * n * k, window_size, 78)
                 speaker_latent_emb=speaker_latent_embed,  # shape: (batch_size * n * k, 1, encoded_dim)

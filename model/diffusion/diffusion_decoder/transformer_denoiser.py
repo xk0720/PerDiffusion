@@ -45,6 +45,8 @@ def timestep_embedding(timesteps, dim, max_period=10000, dtype=torch.float32):
 
 class TransformerDenoiser(nn.Module):
     def __init__(self,
+                 encode_emotion: bool = False,
+                 encode_3dmm: bool = False,
                  ablation_skip_connection: bool = True,
                  nfeats: int = 25,
                  latent_dim: int = 512,
@@ -60,12 +62,12 @@ class TransformerDenoiser(nn.Module):
                  arch: str = "trans_enc",  # or trans_dec
                  freq_shift: int = 0,
                  time_encoded_dim: int = 64,
-                 s_audio_dim: int = 78, # encoded dim of speaker's audio feature
+                 s_audio_dim: int = 78,  # encoded dim of speaker's audio feature
                  s_emotion_dim: int = 25,  # encoded dim of speaker's emotion encodings
                  l_embed_dim: int = 512,  # encoded dim of listener's embedding
                  s_embed_dim: int = 512,  # encoded dim of speaker's embedding
                  personal_emb_dim: int = 512,
-                 l_3dmm_dim: int = 58, # encoded dim of listener 3dmm feature
+                 s_3dmm_dim: int = 58,  # encoded dim of speaker 3dmm feature
                  concat: str = "concat_first",  # concat_first or concat_last
                  guidance_scale: float = 7.5,
                  # condition drop probability
@@ -74,12 +76,14 @@ class TransformerDenoiser(nn.Module):
                  s_audio_enc_drop_prob: float = 0.2,  # speaker_audio_encodings
                  s_latent_embed_drop_prob: float = 0.2,  # speaker_latent_embed
                  s_3dmm_enc_drop_prob: float = 0.2,  # speaker_3dmm_encodings
-                 s_emotion_enc_drop_prob: float = 0.2, # speaker_emotion_encodings
+                 s_emotion_enc_drop_prob: float = 0.2,  # speaker_emotion_encodings
                  past_l_emotion_drop_prob: float = 0.2,  # past_listener_emotion
                  **kwargs) -> None:
 
         super().__init__()
 
+        self.encode_emotion = encode_emotion
+        self.encode_3dmm = encode_3dmm
         self.latent_dim = latent_dim
         self.ablation_skip_connection = ablation_skip_connection
         self.arch = arch
@@ -112,11 +116,17 @@ class TransformerDenoiser(nn.Module):
         self.speaker_audio_proj = nn.Linear(s_audio_dim, self.latent_dim) \
             if s_audio_dim != self.latent_dim else nn.Identity()
 
-        self.speaker_3dmm_proj = nn.Linear(l_3dmm_dim, self.latent_dim) \
-            if l_3dmm_dim != self.latent_dim else nn.Identity()
+        if self.encode_3dmm:  # assume dimension of encoded 3dmm equals latent_dim
+            self.speaker_3dmm_proj = nn.Identity()
+        else:
+            assert s_3dmm_dim != self.latent_dim, "wrong dimension of raw 3dmm features."
+            self.speaker_3dmm_proj = nn.Linear(s_3dmm_dim, self.latent_dim)
 
-        self.speaker_emotion_proj = nn.Linear(s_emotion_dim, self.latent_dim) \
-            if s_emotion_dim != self.latent_dim else nn.Identity() # TODO: use relu?
+        if self.encode_emotion:  # assume dimension of encoded emotion equals latent_dim
+            self.speaker_emotion_proj = nn.Identity()
+        else:
+            assert s_emotion_dim != self.latent_dim, "wrong dimension of raw emotion features."
+            self.speaker_emotion_proj = nn.Linear(s_emotion_dim, self.latent_dim)
 
         self.listener_personal_proj = nn.Linear(personal_emb_dim, self.latent_dim) \
             if personal_emb_dim != self.latent_dim else nn.Identity()
@@ -291,14 +301,14 @@ class TransformerDenoiser(nn.Module):
         # print("speaker_3dmm_encodings", speaker_3dmm_encodings.shape)
         # print("speaker_emotion_encodings", speaker_emotion_encodings.shape)
         # print("past_listener_emotion", past_listener_emotion.shape)
-        # 5/0
+        # 5 / 0
 
         # [N', bs, latent_dim]
         emb_latent = torch.cat((
             time_embed,
             speaker_audio_encodings,  # optional condition,
             speaker_3dmm_encodings,  # optional condition,
-            speaker_emotion_encodings, # optional condition,
+            speaker_emotion_encodings,  # optional condition,
             speaker_latent_embed,  # optional condition,
             listener_latent_embed,
             past_listener_emotion,
