@@ -60,11 +60,12 @@ class TransformerDenoiser(nn.Module):
                  arch: str = "trans_enc",  # or trans_dec
                  freq_shift: int = 0,
                  time_encoded_dim: int = 64,
-                 audio_dim: int = 78,
-                 l_embed_dim: int = 512,  # dim of listener's embedding
-                 s_embed_dim: int = 512,  # dim of speaker's embedding
+                 s_audio_dim: int = 78, # encoded dim of speaker's audio feature
+                 s_emotion_dim: int = 25,  # encoded dim of speaker's emotion encodings
+                 l_embed_dim: int = 512,  # encoded dim of listener's embedding
+                 s_embed_dim: int = 512,  # encoded dim of speaker's embedding
                  personal_emb_dim: int = 512,
-                 l_3dmm_dim: int = 58,
+                 l_3dmm_dim: int = 58, # encoded dim of listener 3dmm feature
                  concat: str = "concat_first",  # concat_first or concat_last
                  guidance_scale: float = 7.5,
                  # condition drop probability
@@ -73,6 +74,7 @@ class TransformerDenoiser(nn.Module):
                  s_audio_enc_drop_prob: float = 0.2,  # speaker_audio_encodings
                  s_latent_embed_drop_prob: float = 0.2,  # speaker_latent_embed
                  s_3dmm_enc_drop_prob: float = 0.2,  # speaker_3dmm_encodings
+                 s_emotion_enc_drop_prob: float = 0.2, # speaker_emotion_encodings
                  past_l_emotion_drop_prob: float = 0.2,  # past_listener_emotion
                  **kwargs) -> None:
 
@@ -90,6 +92,7 @@ class TransformerDenoiser(nn.Module):
         self.s_audio_enc_drop_prob = s_audio_enc_drop_prob
         self.s_latent_embed_drop_prob = s_latent_embed_drop_prob
         self.s_3dmm_enc_drop_prob = s_3dmm_enc_drop_prob
+        self.s_emotion_enc_drop_prob = s_emotion_enc_drop_prob
         self.past_l_emotion_drop_prob = past_l_emotion_drop_prob
 
         # project between 3dmm output feat and 3dmm latent embedding
@@ -106,11 +109,14 @@ class TransformerDenoiser(nn.Module):
         self.listener_latent_proj = nn.Sequential(nn.ReLU(), nn.Linear(l_embed_dim, self.latent_dim)) \
             if l_embed_dim != self.latent_dim else nn.Identity()  # TODO: why relu
 
-        self.speaker_audio_proj = nn.Linear(audio_dim, self.latent_dim) \
-            if audio_dim != self.latent_dim else nn.Identity()
+        self.speaker_audio_proj = nn.Linear(s_audio_dim, self.latent_dim) \
+            if s_audio_dim != self.latent_dim else nn.Identity()
 
         self.speaker_3dmm_proj = nn.Linear(l_3dmm_dim, self.latent_dim) \
             if l_3dmm_dim != self.latent_dim else nn.Identity()
+
+        self.speaker_emotion_proj = nn.Linear(s_emotion_dim, self.latent_dim) \
+            if s_emotion_dim != self.latent_dim else nn.Identity() # TODO: use relu?
 
         self.listener_personal_proj = nn.Linear(personal_emb_dim, self.latent_dim) \
             if personal_emb_dim != self.latent_dim else nn.Identity()
@@ -239,6 +245,14 @@ class TransformerDenoiser(nn.Module):
             speaker_3dmm_encodings = self.mask_cond(speaker_3dmm_encodings, mode, self.s_3dmm_enc_drop_prob)
         speaker_3dmm_encodings = speaker_3dmm_encodings.permute(1, 0, 2).contiguous()
 
+        speaker_emotion_encodings = model_kwargs.get("speaker_emotion_encodings")
+        if speaker_emotion_encodings is None or self.s_emotion_enc_drop_prob >= 1.0:
+            speaker_emotion_encodings = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
+        else:
+            speaker_emotion_encodings = self.speaker_emotion_proj(speaker_emotion_encodings)
+            speaker_emotion_encodings = self.mask_cond(speaker_emotion_encodings, mode, self.s_emotion_enc_drop_prob)
+        speaker_emotion_encodings = speaker_emotion_encodings.permute(1, 0, 2).contiguous()
+
         past_listener_emotion = model_kwargs.get('past_listener_emotion')
         if past_listener_emotion is None or self.past_l_emotion_drop_prob >= 1.0:
             past_listener_emotion = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
@@ -253,6 +267,7 @@ class TransformerDenoiser(nn.Module):
                 speaker_audio_encodings,
                 speaker_latent_embed,
                 speaker_3dmm_encodings,
+                speaker_emotion_encodings,
                 past_listener_emotion)
 
     def _forward(
@@ -264,13 +279,26 @@ class TransformerDenoiser(nn.Module):
             speaker_audio_encodings,
             speaker_latent_embed,
             speaker_3dmm_encodings,
+            speaker_emotion_encodings,
             past_listener_emotion,
     ):
+
+        # TODO: debug: print all shapes
+        # print("listener_latent_embed", listener_latent_embed.shape)
+        # print("listener_personal_embed", listener_personal_embed.shape)
+        # print("speaker_audio_encodings", speaker_audio_encodings.shape)
+        # print("speaker_latent_embed", speaker_latent_embed.shape)
+        # print("speaker_3dmm_encodings", speaker_3dmm_encodings.shape)
+        # print("speaker_emotion_encodings", speaker_emotion_encodings.shape)
+        # print("past_listener_emotion", past_listener_emotion.shape)
+        # 5/0
+
         # [N', bs, latent_dim]
         emb_latent = torch.cat((
             time_embed,
             speaker_audio_encodings,  # optional condition,
             speaker_3dmm_encodings,  # optional condition,
+            speaker_emotion_encodings, # optional condition,
             speaker_latent_embed,  # optional condition,
             listener_latent_embed,
             past_listener_emotion,
@@ -346,6 +374,7 @@ class TransformerDenoiser(nn.Module):
          speaker_audio_encodings,
          speaker_latent_embed,
          speaker_3dmm_encodings,
+         speaker_emotion_encodings,
          past_listener_emotion) = (
             self.get_model_kwargs(
                 bs,
@@ -363,6 +392,7 @@ class TransformerDenoiser(nn.Module):
             speaker_audio_encodings,
             speaker_latent_embed,
             speaker_3dmm_encodings,
+            speaker_emotion_encodings,
             past_listener_emotion,
         )
 
@@ -393,6 +423,7 @@ class TransformerDenoiser(nn.Module):
          speaker_audio_encodings,
          speaker_latent_embed,
          speaker_3dmm_encodings,
+         speaker_emotion_encodings,
          past_listener_emotion) = (
             self.get_model_kwargs(
                 bs,
@@ -402,15 +433,6 @@ class TransformerDenoiser(nn.Module):
             )
         )
 
-        # TODO: debug: print all shapes
-        # print("listener_latent_embed", listener_latent_embed.shape)
-        # print("listener_personal_embed", listener_personal_embed.shape)
-        # print("speaker_audio_encodings", speaker_audio_encodings.shape)
-        # print("speaker_latent_embed", speaker_latent_embed.shape)
-        # print("speaker_3dmm_encodings", speaker_3dmm_encodings.shape)
-        # print("past_listener_emotion", past_listener_emotion.shape)
-        # 5/0
-
         output = self._forward(
             sample,
             time_embed,
@@ -419,6 +441,7 @@ class TransformerDenoiser(nn.Module):
             speaker_audio_encodings,
             speaker_latent_embed,
             speaker_3dmm_encodings,
+            speaker_emotion_encodings,
             past_listener_emotion,
         )
 

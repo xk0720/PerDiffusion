@@ -19,6 +19,7 @@ os.environ['CUDA_LAUNCH_BLOCKING'] = '1'  # For debugging
 def parse_arg():
     parser = argparse.ArgumentParser(description="PyTorch Training")
     parser.add_argument("--exp_num", type=int, help="the number of the experiment.", required=True)
+    parser.add_argument("--config", type=str, required=True)
     args = parser.parse_args()
     return args
 
@@ -80,9 +81,9 @@ def validate(cfg, model, val_loader, criterion, device):
     return whole_losses.avg, rec_losses.avg, kld_losses.avg, coeff_losses.avg
 
 
-def main(args, config_path):
+def main(args):
     # load yaml config
-    cfg = load_config(args=args, config_path=config_path)
+    cfg = load_config(args=args, config_path=args.config)
 
     init_seed(seed=cfg.trainer.seed)  # seed initialization
     lowest_val_loss = 10000
@@ -169,4 +170,4 @@ def main(args, config_path):
 
 
 if __name__ == '__main__':
-    main(args=parse_arg(), config_path="config/latent_embedder.yaml")
+    main(args=parse_arg())

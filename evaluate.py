@@ -19,13 +19,15 @@ def parse_arg():
     parser.add_argument("--mode", type=str, help="train (val) or test", required=True)
     parser.add_argument("--config", type=str, help="config path", required=True)
     parser.add_argument("--evaluate_log_dir", type=str, default="./log/evaluate")  # evaluate
-    parser.add_argument("--binarize", type=bool, help="whether binarize AU in predicted emotions",
-                        default=False)
+    parser.add_argument("--binarize", type=bool, default=False,
+                        help="whether binarize AU in predicted emotions")
+    parser.add_argument("--clip", type=bool, default=True,
+                        help="whether clip AU [:15] and emotions [17:] between 0 and 1")
     args = parser.parse_args()
     return args
 
 
-def evaluate(cfg, device, model, test_loader, split, binarize=False):
+def evaluate(cfg, device, model, test_loader, split, binarize=False, clip=True):
     model.eval()
 
     out_dir = os.path.join(cfg.trainer.out_dir, split, 'exp_' + str(cfg.exp_num))
@@ -82,13 +84,22 @@ def evaluate(cfg, device, model, test_loader, split, binarize=False):
             # shape: (bs, k_appro==10, seq_len==750, emo_dim==25)
 
             # TODO: Note: if we use activation during function, we also need to use at the infer stage.
-            # AU = listener_emotion_pred[:, :, :15]
+            # AU = listener_emotion_pred[:, :, :, :15]
             # AU = torch.sigmoid(AU)
-            # middle_feat = listener_emotion_pred[:, :, 15:17]
+            # middle_feat = listener_emotion_pred[:, :, :, 15:17]
             # middle_feat = torch.tanh(middle_feat)
-            # emotion = listener_emotion_pred[:, :, 17:]
+            # emotion = listener_emotion_pred[:, :, :, 17:]
             # emotion = torch.softmax(emotion, dim=-1)
             # listener_emotion_pred = torch.cat((AU, middle_feat, emotion), dim=-1)
+
+            # TODO: Note: we clip the value if clip==True, make first 15 AUs and last 8 emotions bewteen 0 and 1.
+            if clip:
+                AU = listener_emotion_pred[:, :, :, :15]
+                AU = torch.clip(AU, 0, 1)
+                middle_feat = listener_emotion_pred[:, :, :, 15:17]
+                emotion = listener_emotion_pred[:, :, :, 17:]
+                emotion = torch.clip(emotion, 0, 1)
+                listener_emotion_pred = torch.cat((AU, middle_feat, emotion), dim=-1)
 
             if binarize:
                 listener_emotion_pred[:, :, :, :15] = torch.round(listener_emotion_pred[:, :, :, :15])
@@ -108,16 +119,6 @@ def evaluate(cfg, device, model, test_loader, split, binarize=False):
             #     mean_value = np.mean(_3dmm_pred)
             #     f.write("Max_value: {:.5f}  Min_value: {:.5f} Mean_value: {:.5f} \n".
             #             format(max_value, min_value, mean_value))
-
-            # Rendering
-            # render.rendering_for_fid(
-            #     out_dir,
-            #     "{}_iter_{}".format(split, str(iteration + 1)),
-            #     listener_3dmm_pred[0, 0],  # (750, 58)
-            #     speaker_video_clip[0],  # (750, 3, 224, 224)
-            #     listener_reference[0],  # (3, 224, 224)
-            #     listener_video_clip[0],  # (750, 3, 224, 224)
-            # )
 
             speaker_emotion_list.append(speaker_emotion_clip.detach().cpu())
             listener_emotion_pred_list.append(listener_emotion_pred.detach().cpu())
@@ -187,7 +188,7 @@ def main(args):
     model = getattr(module_arch, cfg.trainer.model)(cfg, device)
     model.to(device)
 
-    FRC, FRD, FRDvs, FRVar, smse, TLCC = evaluate(cfg, device, model, test_loader, split, cfg.binarize)
+    FRC, FRD, FRDvs, FRVar, smse, TLCC = evaluate(cfg, device, model, test_loader, split, cfg.binarize, cfg.clip)
 
     print("FRC: {:.5f}  FRD: {:.5f}  FRDvs: {:.5f}  FRVar: {:.5f}  smse: {:.5f}  TLCC: {:.5f}"
           .format(FRC, FRD, FRDvs, FRVar, smse, TLCC))

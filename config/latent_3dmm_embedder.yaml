@@ -1,9 +1,9 @@
 model:
     type:
-        AutoencoderRNN_VAE_v2
+        AutoencoderRNN_VAE_v1
     args:
-        emotion_dim: 25
-        coeff_3dmm_dim: 58
+        _3dmm_dim: 58
+        coeff_emotion_dim: 25
         emb_dims: [128, 128]
         num_layers: 2
         hidden_dim: 512
@@ -20,16 +20,16 @@ trainer:
     resume:
     num_workers: 12
     clip_grad: True
-    log_dir: ./log/latent_embedder
-    tb_dir: ./tb_logs/latent_embedder
-    out_dir: ./results/latent_embedder
-    checkpoint_dir: ./checkpoints/latent_embedder
+    log_dir: ./log/latent_3dmm_embedder
+    tb_dir: ./tb_logs/latent_3dmm_embedder
+    out_dir: ./results/latent_3dmm_embedder
+    checkpoint_dir: ./checkpoints/latent_3dmm_embedder
     save_period: 50
     val_period: 50
 
 loss:
     type:
-        MSELoss_AE_v2
+        MSELoss_AE_v1
     args:
         w_mse: 1
         w_kld: 0.00001

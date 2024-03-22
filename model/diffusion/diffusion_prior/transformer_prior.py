@@ -431,6 +431,12 @@ class DiffusionPriorNetwork(nn.Module):
         speaker_3dmm_encodings = s_3dmm_encodings
         # ============
 
+        # TODO: debug: print shapes of all conditions.
+        # print("speaker_audio_encodings: ", speaker_audio_encodings.shape)
+        # print("speaker_latent_emb: ", speaker_latent_emb.shape)
+        # print("speaker_3dmm_encodings: ", speaker_3dmm_encodings.shape)
+        # 5/0
+
         learned_queries = repeat(self.learned_query, 'd -> b 1 d', b=bs) \
             if self.use_learned_query else torch.zeros(size=(bs, 0, self.latent_dim)).to(x_t.device)
 

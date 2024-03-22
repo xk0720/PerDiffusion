@@ -60,10 +60,10 @@ diffusion_prior:
         num_time_emb_channels: 64
         time_last_act: False
         use_learned_query: True
-        s_audio_cond_drop_prob: 0.2 # speaker audio encodings
-        s_latentemb_cond_drop_prob: 0.2 # speaker latent embedding
-        s_3dmm_cond_drop_prob: 0.2 # speaker 3dmm encodings
-        guidance_scale: 7.5
+        s_audio_cond_drop_prob: 0.0 # speaker audio encodings
+        s_latentemb_cond_drop_prob: 0.0 # speaker latent embedding
+        s_3dmm_cond_drop_prob: 0.0 # speaker 3dmm encodings
+        guidance_scale: 1.0
         dim_head: 64
         heads: 8
         ff_mult: 4
@@ -105,14 +105,15 @@ diffusion_decoder:
         flip_sin_to_cos: True
         return_intermediate_dec: False
         position_embedding: learned
-        arch: trans_enc # trans_enc or trans_dec
+        arch: trans_dec # trans_enc or trans_dec
         freq_shift: 0
         time_encoded_dim: 64
-        audio_dim: 78
+        s_audio_dim: 78 # encoded dim of speaker's audio feature
+        s_emotion_dim: 25 # encoded dim of speaker's emotion encodings
         l_embed_dim: 512
         s_embed_dim: 512
         personal_emb_dim: 512
-        l_3dmm_dim: 58
+        l_3dmm_dim: 58 # encoded dim of listener 3dmm feature
         concat: concat_first # concat_first or concat_last
         guidance_scale: 7.5
         l_latent_embed_drop_prob: 0.2  # listener_latent_embed
@@ -120,8 +121,9 @@ diffusion_decoder:
         s_audio_enc_drop_prob: 0.2  # speaker_audio_encodings
         s_latent_embed_drop_prob: 0.2  # speaker_latent_embed
         s_3dmm_enc_drop_prob: 0.2  # speaker_3dmm_encodings
+        s_emotion_enc_drop_prob: 0.2  # speaker_emotion_encodings
         past_l_emotion_drop_prob: 0.2  # past_listener_emotion
-        use_past_frames: True # whether use past frames
+        use_past_frames: True  # whether use past frames
     scheduler:
         noise_schedule: cosine # linear or cosine
         timestep_spacing: leading # leading (default) or linspace or trailing
@@ -162,7 +164,7 @@ optimizer:
     type:
         adamW
     args:
-        lr: 0.001
+        lr: 0.0001
         weight_decay: 1e-4
         beta: [0.9, 0.999]
     scheduler: cosine_annealing # none
