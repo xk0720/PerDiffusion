@@ -76,6 +76,31 @@ def train(cfg, model, train_loader, optimizer, scheduler, criterion, epoch, writ
         # output_decoder['prediction_emotion'].shape: [bs, k_appro, window_size, 25]
         # output_decoder['target_emotion'].shape: [bs, k_appro, window_size, 25]
 
+        # TODO: debug: save emotion predictions and GT
+        with torch.no_grad():
+            if batch_idx == 0 and epoch % 50 == 0:
+        #         AU = output_decoder['prediction_emotion'].detach()[:, :, :, :15]
+        #         AU = torch.sigmoid(AU)
+        #         middle_feat = output_decoder['prediction_emotion'].detach()[:, :, :, 15:17]
+        #         middle_feat = torch.tanh(middle_feat)
+        #         emotion = output_decoder['prediction_emotion'].detach()[:, :, :, 17:]
+        #         emotion = torch.softmax(emotion, dim=-1)
+        #         pred = torch.cat((AU, middle_feat, emotion), dim=-1)
+        #         pred = pred.cpu().numpy()
+        #         gt = output_decoder['target_emotion'].detach()
+        #         gt = gt.cpu().numpy()
+        #         save_dir = os.path.join(cfg.trainer.out_dir, 'train', 'exp_' + str(cfg.exp_num), 'save_emotion')
+        #         os.makedirs(save_dir, exist_ok=True)
+        #         np.save(os.path.join(save_dir, 'epoch_{}_iter_{}_pred_emotion.npy'.format(epoch, batch_idx)), pred)
+        #         np.save(os.path.join(save_dir, 'epoch_{}_iter_{}_gt_emotion.npy'.format(epoch, batch_idx)), gt)
+
+                pred = output_decoder['prediction_emotion'].detach().cpu().numpy()
+                gt = output_decoder['target_emotion'].detach().cpu().numpy()
+                save_dir = os.path.join(cfg.trainer.out_dir, 'train', 'exp_' + str(cfg.exp_num), 'save_emotion')
+                os.makedirs(save_dir, exist_ok=True)
+                np.save(os.path.join(save_dir, 'epoch_{}_iter_{}_pred_emotion.npy'.format(epoch, batch_idx)), pred)
+                np.save(os.path.join(save_dir, 'epoch_{}_iter_{}_gt_emotion.npy'.format(epoch, batch_idx)), gt)
+
         output = criterion(output_prior, output_decoder)
         loss = output["loss"] # whole training loss
         temporal_loss = output["temporal_loss"] # temporal constraints
@@ -97,6 +122,16 @@ def train(cfg, model, train_loader, optimizer, scheduler, criterion, epoch, writ
 
         optimizer.zero_grad()
         loss.backward()
+
+        # TODO: debug: save the computed gradient stats
+        # print("compute the gradient stats.")
+        # grad_stats = collect_grad_stats(model.parameters())
+        # grad_min = grad_stats['min']
+        # grad_max = grad_stats['max']
+        # grad_mean = grad_stats['mean']
+        # writer.add_scalar("Model/grad_min", grad_min, iteration)
+        # writer.add_scalar("Model/grad_max", grad_max, iteration)
+        # writer.add_scalar("Model/grad_mean", grad_mean, iteration)
 
         if cfg.trainer.clip_grad:
             clip_grad_norm_(parameters=model.parameters(), max_norm=5, norm_type=2)

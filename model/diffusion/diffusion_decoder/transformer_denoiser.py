@@ -221,7 +221,6 @@ class TransformerDenoiser(nn.Module):
         listener_latent_embed = listener_latent_embed.permute(1, 0, 2).contiguous()
 
         listener_personal_embed = model_kwargs.get('listener_personal_embed')
-
         if listener_personal_embed is None or self.l_personal_embed_drop_prob >= 1.0:
             listener_personal_embed = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
         # TODO: we use listener_personal_embed to rewrite the weight.
@@ -231,7 +230,6 @@ class TransformerDenoiser(nn.Module):
         listener_personal_embed = listener_personal_embed.permute(1, 0, 2).contiguous()
 
         speaker_audio_encodings = model_kwargs.get('speaker_audio_encodings')
-
         if speaker_audio_encodings is None or self.s_audio_enc_drop_prob >= 1.0:
             speaker_audio_encodings = torch.zeros(size=(bs, 0, self.latent_dim)).to(sample.device)
         else:
