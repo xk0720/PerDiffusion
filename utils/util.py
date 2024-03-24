@@ -257,7 +257,6 @@ def optimizer_resume(cfg, model, optimizer, device):
     model_path = os.path.join(cfg.trainer.checkpoint_dir, model_name, cfg.trainer.resume)
     checkpoint = torch.load(model_path, map_location='cpu')
     optimizer.load_state_dict(checkpoint['optimizer'])
-    optimizer.to(device)
     print("Successfully resume optimizer: ", model_name)
 
 
